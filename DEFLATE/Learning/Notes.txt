@@ -1,0 +1,13 @@
+to read and decompress the idat chunks we have to first concatenate all idat data then read it one by one
+
+A deflate block has 2 parts
+	-pair of Huffman  trees
+	-lz77 compressed data blocks
+
+lz77 compresses data by using 32k prior bytes(in deflate) and reference a repeating string(multiple bytes) 
+the reference consists of length and distance , where distance represents the offset of bytes from current byte to
+the prior repeating byte.
+
+Huffman coding is a variable-length-code where the length of a character depends on its frequency , characters with more frequency get a 
+low length code.
+

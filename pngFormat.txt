@@ -1,0 +1,20 @@
+8 byte header: 89 50 4E 47 0D 0A 1A 0A
+
+Series of Chunks
+
+Chunk:
+	4 byte length
+	4 byte type/name
+	length byte data
+	4 byte CRC checksum(network-byte-order CRC-32)
+Critical chunks:
+IHDR : 13 bytes data:
+	4 byte width
+	4 byte height
+	1 byte bits per channel
+	1 byte color type
+	1 byte compression method
+	1 byte filter method
+	1 byte interlace method
+
+PLTE : Pallete information for indexed file
