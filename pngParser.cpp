@@ -4,13 +4,21 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
-
+struct ParsedData{
+    unsigned int width;
+    unsigned int height;
+    unsigned char bpp;
+    unsigned char colorType;
+    unsigned char compressionMethod;
+    unsigned char filterMethod;
+    unsigned char interlaceMethod;
+};
 class Parser {
 public:
     ~Parser() = default;
     std::vector<char> compressedIDAT;
 
-    bool parse(const std::string& filepath, unsigned int* rWidth, unsigned int* rHeight, unsigned int* BPP) {
+    bool parse(const std::string& filepath, ParsedData& parsedData) {
         std::ifstream file(filepath, std::ios::binary | std::ios::ate);
         if (!file) {
             std::cerr << "Failed to open file " << filepath << "\n";
@@ -45,12 +53,23 @@ public:
             reader += 4;
 
             if (chunkType == "IHDR" && reader + 13 <= end) {
-                *rWidth = readBigEndian32(reader);
-                *rHeight = readBigEndian32(reader + 4);
-                *BPP = static_cast<unsigned char>(reader[8]);
+                parsedData.width = readBigEndian32(&reader[0]);
+                parsedData.height = readBigEndian32(&reader[4]);
+                parsedData.bpp = static_cast<unsigned char>(reader[8]);
+                parsedData.colorType = static_cast<unsigned char>(reader[9]);
+                parsedData.compressionMethod = static_cast<unsigned char>(reader[10]);
+                parsedData.filterMethod = static_cast<unsigned char>(reader[11]);
+                parsedData.interlaceMethod = static_cast<unsigned char>(reader[12]);
+
+                //TODO:(Fahad):Check if it follows the PNG standard
             }
             else if (chunkType == "IDAT") {
+                //TODO:(Fahad):Confirm that the chunk metadata is not being transferred to imagedata
                 compressedIDAT.insert(compressedIDAT.end(), reader, reader + length);
+            }else if (chunkType == "IEND"){
+                //TODO:(Fahad):Decompress and Organize data in a buffer
+            }else{
+                std::cout << "Chunktype "<<chunkType<<" Encountered!\n";
             }
 
             reader += length + 4; // skip data and CRC
@@ -72,12 +91,18 @@ int main() {
     const std::string filepath = "..\\dbh.png";
     Parser parser;
 
-    unsigned int width = 0, height = 0, BPP = 0;
-    if (parser.parse(filepath, &width, &height, &BPP)) {
-        std::cout << "Width: " << width << "\n";
-        std::cout << "Height: " << height << "\n";
-        std::cout << "Bits per pixel: " << BPP << "\n";
+    ParsedData parsedData;
+    if (parser.parse(filepath, parsedData)) {
+        std::cout << "Width: " << parsedData.width << "\n";
+        std::cout << "Height: " << parsedData.height << "\n";
+        std::cout << "Bits per channel: " << static_cast<int>(parsedData.bpp) << "\n";
+        std::cout << "Color type: " << static_cast<int>(parsedData.colorType) << "\n";
+        std::cout << "Compression Method: " << static_cast<int>(parsedData.compressionMethod) << "\n";
+        std::cout << "Filter Method: " << static_cast<int>(parsedData.filterMethod) << "\n";
+        std::cout << "Interlace Method: " << static_cast<int>(parsedData.interlaceMethod) << "\n";
         std::cout << "Compressed IDAT size: " << parser.compressedIDAT.size()/(1024.f*1024.f) << " MB\n";
+    }else{
+        std::cerr << "Failed to load the png " << filepath << "\n";
     }
 
     return 0;

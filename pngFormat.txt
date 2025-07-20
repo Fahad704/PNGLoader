@@ -7,14 +7,16 @@ Chunk:
 	4 byte type/name
 	length byte data
 	4 byte CRC checksum(network-byte-order CRC-32)
+
+
 Critical chunks:
-IHDR : 13 bytes data:
-	4 byte width
-	4 byte height
-	1 byte bits per channel
-	1 byte color type
-	1 byte compression method
-	1 byte filter method
-	1 byte interlace method
+IHDR : 13 bytes data:			offset
+	4 byte width				0
+	4 byte height				4
+	1 byte bits per channel		8
+	1 byte color type			9
+	1 byte compression method	10
+	1 byte filter method		11
+	1 byte interlace method		12
 
 PLTE : Pallete information for indexed file
