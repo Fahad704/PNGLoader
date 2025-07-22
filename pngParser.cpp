@@ -4,6 +4,9 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+
+typedef unsigned int u32;
+
 struct ParsedData{
     unsigned int width;
     unsigned int height;
@@ -12,11 +15,11 @@ struct ParsedData{
     unsigned char compressionMethod;
     unsigned char filterMethod;
     unsigned char interlaceMethod;
+    std::vector<char> compressedData;
 };
 class Parser {
 public:
     ~Parser() = default;
-    std::vector<char> compressedIDAT;
 
     bool parse(const std::string& filepath, ParsedData& parsedData) {
         std::ifstream file(filepath, std::ios::binary | std::ios::ate);
@@ -65,7 +68,7 @@ public:
             }
             else if (chunkType == "IDAT") {
                 //TODO:(Fahad):Confirm that the chunk metadata is not being transferred to imagedata
-                compressedIDAT.insert(compressedIDAT.end(), reader, reader + length);
+                parsedData.compressedData.insert(parsedData.compressedData.end(), reader, reader + length);
             }else if (chunkType == "IEND"){
                 //TODO:(Fahad):Decompress and Organize data in a buffer
             }else{
@@ -74,6 +77,29 @@ public:
 
             reader += length + 4; // skip data and CRC
         }
+        if(decompressData(parsedData)){
+            return true;
+        }
+        else{
+            std::cout << "Error : unable to decompress data\n";
+            return false;
+        }
+    }
+    bool decompressData(ParsedData& parsedData){
+        const char* reader = parsedData.compressedData.data();
+        const char* end = parsedData.compressedData.data() + parsedData.compressedData.size();
+
+        char header = reader[0];
+
+        bool lastblockbit = (header & 1);
+        char compressionType = ((header & 2) | (header & 4));
+
+        std::cout << "Last block in stream : "<<lastblockbit<<"\n";
+        std::cout << "Compression Type : "<<int(compressionType) <<"\n";
+
+        reader += 1;
+
+        //TODO(Fahad):Decompress deflate stream
 
         return true;
     }
@@ -90,7 +116,6 @@ private:
 int main() {
     const std::string filepath = "..\\dbh.png";
     Parser parser;
-
     ParsedData parsedData;
     if (parser.parse(filepath, parsedData)) {
         std::cout << "Width: " << parsedData.width << "\n";
@@ -100,10 +125,9 @@ int main() {
         std::cout << "Compression Method: " << static_cast<int>(parsedData.compressionMethod) << "\n";
         std::cout << "Filter Method: " << static_cast<int>(parsedData.filterMethod) << "\n";
         std::cout << "Interlace Method: " << static_cast<int>(parsedData.interlaceMethod) << "\n";
-        std::cout << "Compressed IDAT size: " << parser.compressedIDAT.size()/(1024.f*1024.f) << " MB\n";
+        std::cout << "Compressed IDAT size: " << parsedData.compressedData.size()/(1024.f*1024.f) << " MB\n";
     }else{
         std::cerr << "Failed to load the png " << filepath << "\n";
     }
-
     return 0;
 }

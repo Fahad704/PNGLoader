@@ -1,0 +1,10 @@
+Deflate format
+
+-3 bit header
+bit 0 - last block in stream marker
+bit 1-2 
+    - 00 = A stored section between 0 and 65,535 bytes in length
+    - 01 = Static huffman compressed block , using huffman tree in the rfc
+    - 10 = Dynamic huffman compressed block , with huffman table supplied
+    - 11 = reserved dont use
+
