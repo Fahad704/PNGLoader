@@ -4,6 +4,7 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+#include <math.h>
 
 typedef unsigned int u32;
 
@@ -85,6 +86,14 @@ public:
             return false;
         }
     }
+    std::string byteAsStr(char value){
+        std::string result = "";
+        for (int i=7;i>-1;i--){
+            int mask = pow(2,i);
+            result += std::to_string(((value & mask) != 0));
+        }
+        return result;
+    }
     bool decompressData(ParsedData& parsedData){
         const char* reader = parsedData.compressedData.data();
         const char* end = parsedData.compressedData.data() + parsedData.compressedData.size();
@@ -93,23 +102,24 @@ public:
 
         bool lastblockbit = (header & 1);
         char compressionType = ((header & 2) | (header & 4));
-
+        std::cout<<"---Deflate--info---\n";
+        std::cout << "Header byte : "<< byteAsStr(header) << "\n";
         std::cout << "Last block in stream : "<<lastblockbit<<"\n";
         std::cout << "Compression Type : "<<int(compressionType) <<"\n";
-
+        
         reader += 1;
-
+        
         //TODO(Fahad):Decompress deflate stream
-
+        
         return true;
     }
-
-private:
+    
+    private:
     static uint32_t readBigEndian32(const char* data) {
         return (static_cast<unsigned char>(data[0]) << 24) |
-               (static_cast<unsigned char>(data[1]) << 16) |
-               (static_cast<unsigned char>(data[2]) << 8)  |
-               (static_cast<unsigned char>(data[3]));
+        (static_cast<unsigned char>(data[1]) << 16) |
+        (static_cast<unsigned char>(data[2]) << 8)  |
+        (static_cast<unsigned char>(data[3]));
     }
 };
 
@@ -118,6 +128,7 @@ int main() {
     Parser parser;
     ParsedData parsedData;
     if (parser.parse(filepath, parsedData)) {
+        std::cout<<"---PNG--info---\n";
         std::cout << "Width: " << parsedData.width << "\n";
         std::cout << "Height: " << parsedData.height << "\n";
         std::cout << "Bits per channel: " << static_cast<int>(parsedData.bpp) << "\n";
