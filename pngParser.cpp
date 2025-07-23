@@ -7,6 +7,8 @@
 #include <math.h>
 
 typedef unsigned int u32;
+typedef unsigned char u8;
+typedef unsigned short u16;
 
 struct ParsedData{
     unsigned int width;
@@ -23,6 +25,7 @@ public:
     ~Parser() = default;
 
     bool parse(const std::string& filepath, ParsedData& parsedData) {
+        bool result=true;
         std::ifstream file(filepath, std::ios::binary | std::ios::ate);
         if (!file) {
             std::cerr << "Failed to open file " << filepath << "\n";
@@ -68,25 +71,24 @@ public:
                 //TODO:(Fahad):Check if it follows the PNG standard
             }
             else if (chunkType == "IDAT") {
-                //TODO:(Fahad):Confirm that the chunk metadata is not being transferred to imagedata
+                std::cout << length << " Bytes inserted in comrpessedData\n";
                 parsedData.compressedData.insert(parsedData.compressedData.end(), reader, reader + length);
             }else if (chunkType == "IEND"){
                 //TODO:(Fahad):Decompress and Organize data in a buffer
+                if(!decompressData(parsedData)){
+                    std::cout << "Error : unable to decompress data\n";
+                    result = false;
+                }
             }else{
-                std::cout << "Chunktype "<<chunkType<<" Encountered!\n";
+                std::cout << "Unhandled Chunktype "<<chunkType<<" Encountered\n";
             }
 
             reader += length + 4; // skip data and CRC
         }
-        if(decompressData(parsedData)){
-            return true;
-        }
-        else{
-            std::cout << "Error : unable to decompress data\n";
-            return false;
-        }
+        
+        return result;
     }
-    std::string byteAsStr(char value){
+    std::string byteAsBin(char value){
         std::string result = "";
         for (int i=7;i>-1;i--){
             int mask = pow(2,i);
@@ -95,36 +97,63 @@ public:
         return result;
     }
     bool decompressData(ParsedData& parsedData){
+        //Block compression types
+        enum{
+            BTYPE_NO_COMPRESSION=0,
+            BTYPE_FIXED_HUFFMAN,
+            BTYPE_DYNAMIC_HUFFMAN,
+            BTYPE_RESERVED
+        };
         const char* reader = parsedData.compressedData.data();
         const char* end = parsedData.compressedData.data() + parsedData.compressedData.size();
+        std::cout << "Compressed data size: "<<parsedData.compressedData.size()<<"\n";
+        //while((reader + 8) <= end){
+            //Block header
+            char header = reader[0];
 
-        char header = reader[0];
+            bool lastblockbit = (header & 1);// Header & 00000001
+            char compressionType = ((header & 6));  // Header & 00000110
+            std::cout<<"---Deflate--Block---\n";
+            std::cout << "Header byte : "<< byteAsBin(header) << "\n";
+            std::cout << "Last block in stream : "<<lastblockbit<<"\n";
+            std::cout << "Compression Type : "<<int(compressionType) <<"\n";
+            reader += 1;
+            u16 blockLength = 0;
+            if(compressionType == BTYPE_NO_COMPRESSION){
+                blockLength = readBigEndian16(&reader[0]);
+                u16 blockLengthComplement = readBigEndian16(&reader[2]);
+                std::cout<<"Block length : "<<blockLength<<"\n";
+                std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
+                std::cout<<"Block Complement length : "<< blockLengthComplement <<"\n";
+                std::cout << "Block comp(b):"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
+                std::cout<<"Check : "<<((blockLengthComplement) | (blockLength))<<"\n";
+                //skip length data
+                reader += 4;
+            }
+            //skip data
+            reader += blockLength;
+       // }
 
-        bool lastblockbit = (header & 1);
-        char compressionType = ((header & 2) | (header & 4));
-        std::cout<<"---Deflate--info---\n";
-        std::cout << "Header byte : "<< byteAsStr(header) << "\n";
-        std::cout << "Last block in stream : "<<lastblockbit<<"\n";
-        std::cout << "Compression Type : "<<int(compressionType) <<"\n";
-        
-        reader += 1;
-        
         //TODO(Fahad):Decompress deflate stream
         
         return true;
     }
     
     private:
-    static uint32_t readBigEndian32(const char* data) {
+    static u32 readBigEndian32(const char* data) {
         return (static_cast<unsigned char>(data[0]) << 24) |
         (static_cast<unsigned char>(data[1]) << 16) |
         (static_cast<unsigned char>(data[2]) << 8)  |
         (static_cast<unsigned char>(data[3]));
     }
+    static u16 readBigEndian16(const char* data){
+        return (static_cast<u16>(data[0]) << 8)|
+        (static_cast<u16>(data[1]));    
+    }
 };
 
 int main() {
-    const std::string filepath = "..\\dbh.png";
+    const std::string filepath = "..\\stars.png";
     Parser parser;
     ParsedData parsedData;
     if (parser.parse(filepath, parsedData)) {

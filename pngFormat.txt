@@ -20,3 +20,7 @@ IHDR : 13 bytes data:			offset
 	1 byte interlace method		12
 
 PLTE : Pallete information for indexed file
+
+IDAT : DEFLATE compressed image data in multiple IDAT blocks , 
+	->if there are multiple IDAT blocks then there must be nothing between them.
+	->To make a single DEFLATE compressed data stream you need to concatenate all IDAT block data
