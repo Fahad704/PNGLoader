@@ -11,10 +11,10 @@ Chunk:
 
 Critical chunks:
 IHDR : 13 bytes data:			offset
-	4 byte width				0
-	4 byte height				4
+	4 byte width			0
+	4 byte height			4
 	1 byte bits per channel		8
-	1 byte color type			9
+	1 byte color type		9
 	1 byte compression method	10
 	1 byte filter method		11
 	1 byte interlace method		12

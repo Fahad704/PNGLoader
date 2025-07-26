@@ -53,15 +53,15 @@ public:
         const char* end = buffer.data() + size;
 
         while (reader + 8 <= end) {
-            uint32_t length = readBigEndian32(reader);
+            uint32_t length = readLittleEndian32(reader);
             reader += 4;
 
             std::string chunkType(reader, 4);
             reader += 4;
 
             if (chunkType == "IHDR" && reader + 13 <= end) {
-                parsedData.width = readBigEndian32(&reader[0]);
-                parsedData.height = readBigEndian32(&reader[4]);
+                parsedData.width = readLittleEndian32(&reader[0]);
+                parsedData.height = readLittleEndian32(&reader[4]);
                 parsedData.bpp = static_cast<unsigned char>(reader[8]);
                 parsedData.colorType = static_cast<unsigned char>(reader[9]);
                 parsedData.compressionMethod = static_cast<unsigned char>(reader[10]);
@@ -106,13 +106,15 @@ public:
         };
         const char* reader = parsedData.compressedData.data();
         const char* end = parsedData.compressedData.data() + parsedData.compressedData.size();
+        //skip zlib header
+        reader += 2;
         std::cout << "Compressed data size: "<<parsedData.compressedData.size()<<"\n";
         //while((reader + 8) <= end){
             //Block header
             char header = reader[0];
 
             bool lastblockbit = (header & 1);// Header & 00000001
-            char compressionType = ((header & 6));  // Header & 00000110
+            char compressionType = (header & 2) | ((header & 4) >> 2);
             std::cout<<"---Deflate--Block---\n";
             std::cout << "Header byte : "<< byteAsBin(header) << "\n";
             std::cout << "Last block in stream : "<<lastblockbit<<"\n";
@@ -140,15 +142,27 @@ public:
     }
     
     private:
-    static u32 readBigEndian32(const char* data) {
+    //Little endian
+    static u32 readLittleEndian32(const char* data) {
         return (static_cast<unsigned char>(data[0]) << 24) |
         (static_cast<unsigned char>(data[1]) << 16) |
         (static_cast<unsigned char>(data[2]) << 8)  |
         (static_cast<unsigned char>(data[3]));
     }
-    static u16 readBigEndian16(const char* data){
+    static u16 readLittleEndian16(const char* data){
         return (static_cast<u16>(data[0]) << 8)|
         (static_cast<u16>(data[1]));    
+    }
+    //Big endian
+    static u32 readBigEndian32(const char* data) {
+        return (static_cast<unsigned char>(data[0])) |
+        (static_cast<unsigned char>(data[1]) << 8) |
+        (static_cast<unsigned char>(data[2]) << 16)  |
+        (static_cast<unsigned char>(data[3]) << 24);
+    }
+    static u16 readBigEndian16(const char* data) {
+        return (static_cast<unsigned char>(data[0])) |
+        (static_cast<unsigned char>(data[1]) << 8);
     }
 };
 
@@ -169,5 +183,16 @@ int main() {
     }else{
         std::cerr << "Failed to load the png " << filepath << "\n";
     }
+    std::ofstream ofs;
+    ofs.open("compressedrawdata");
+
+    if(!ofs.is_open()){
+        std::cout << "Failed to open compressedrawdata\n";
+        return 1;
+    }else{
+        std::cout << "Compressed data size:"<<parsedData.compressedData.size()<<"\n";
+        ofs << parsedData.compressedData.data();
+    }
+    ofs.close();
     return 0;
 }
