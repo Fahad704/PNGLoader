@@ -19,6 +19,19 @@ struct ParsedData{
     unsigned char filterMethod;
     unsigned char interlaceMethod;
     std::vector<char> compressedData;
+    std::vector<char> imageData;
+};
+char colorTypes[7][20] = {
+    "Grayscale",            // 0
+    "ERROR",
+    "Truecolor",            // 2
+    "Indexed",              // 3
+    "Grayscale and Alpha",  // 4
+    "ERROR",
+    "Truecolor and Alpha"   // 6
+};
+char compressionNames[3][16] = {
+    "No Compression","Fixed Huffman","Dynamic Huffman"
 };
 class Parser {
 public:
@@ -71,7 +84,7 @@ public:
                 //TODO:(Fahad):Check if it follows the PNG standard
             }
             else if (chunkType == "IDAT") {
-                std::cout << length << " Bytes inserted in comrpessedData\n";
+                //std::cout << length << " Bytes inserted in compressedData\n";
                 parsedData.compressedData.insert(parsedData.compressedData.end(), reader, reader + length);
             }else if (chunkType == "IEND"){
                 //TODO:(Fahad):Decompress and Organize data in a buffer
@@ -98,7 +111,7 @@ public:
     }
     bool decompressData(ParsedData& parsedData){
         //Block compression types
-        enum{
+        enum BlockType{
             BTYPE_NO_COMPRESSION=0,
             BTYPE_FIXED_HUFFMAN,
             BTYPE_DYNAMIC_HUFFMAN,
@@ -108,33 +121,43 @@ public:
         const char* end = parsedData.compressedData.data() + parsedData.compressedData.size();
         //skip zlib header
         reader += 2;
-        std::cout << "Compressed data size: "<<parsedData.compressedData.size()<<"\n";
-        //while((reader + 8) <= end){
+        std::cout << "Compressed data size: "<<parsedData.compressedData.size()<<" Bytes \n";
+
+        while((reader + 8) <= end){
             //Block header
             char header = reader[0];
 
             bool lastblockbit = (header & 1);// Header & 00000001
-            char compressionType = (header & 2) | ((header & 4) >> 2);
+            int compressionType = (header & 2) | ((header & 4) >> 2);
             std::cout<<"---Deflate--Block---\n";
             std::cout << "Header byte : "<< byteAsBin(header) << "\n";
             std::cout << "Last block in stream : "<<lastblockbit<<"\n";
-            std::cout << "Compression Type : "<<int(compressionType) <<"\n";
+            std::cout << "Compression Type : "<< compressionType << " (" << compressionNames[compressionType]<< ")\n";
             reader += 1;
             u16 blockLength = 0;
             if(compressionType == BTYPE_NO_COMPRESSION){
                 blockLength = readBigEndian16(&reader[0]);
                 u16 blockLengthComplement = readBigEndian16(&reader[2]);
                 std::cout<<"Block length : "<<blockLength<<"\n";
-                std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
                 std::cout<<"Block Complement length : "<< blockLengthComplement <<"\n";
-                std::cout << "Block comp(b):"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
-                std::cout<<"Check : "<<((blockLengthComplement) | (blockLength))<<"\n";
+                std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
+                std::cout << "Block comp(b):\t"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
                 //skip length data
                 reader += 4;
+                //skip data
+                parsedData.imageData.insert(parsedData.imageData.end(),reader,reader+blockLength);
+                reader += blockLength;
+                continue;
+            }else if(compressionType == BTYPE_FIXED_HUFFMAN){
+                return true;
+            }else if(compressionType == BTYPE_DYNAMIC_HUFFMAN){
+                return true;
+            }else{
+                std::cout << "ERROR : INVALID COMPRESSION TYPE\n";
+                return false;
             }
-            //skip data
-            reader += blockLength;
-       // }
+            
+        }
 
         //TODO(Fahad):Decompress deflate stream
         
@@ -165,34 +188,57 @@ public:
         (static_cast<unsigned char>(data[1]) << 8);
     }
 };
+void printCompressedData(const char* data,u32 size){
+    std::ofstream ofs;
+    ofs.open("compressedrawdata",std::ios::binary);
 
+    if(!ofs.is_open()){
+        std::cout << "Failed to open compressedrawdata\n";
+        return;
+    }else{
+        ofs.write(data,size);
+    }
+    ofs.close();
+}
+void outputToPPM(const char* buffer,u32 width,u32 height){
+    const char* reader = buffer;
+    
+    std::ofstream ofs;
+    ofs.open("imageoutput.ppm");
+    if(!ofs.is_open()){
+        std::cout << "Failed to open imageoutput.ppm\n";
+        return;
+    }
+
+    ofs << "P3\n" << width << " " <<  height <<"\n255\n";
+    for(int i=0;i<height;i++){
+        reader += 1; // skip filter byte
+        for(int j=0;j<width;j++){
+            ofs << int(u8(*reader)) << ' ' << int(u8(*(reader + 1))) << ' ' << int(u8(*(reader + 2))) << '\n';
+            reader += 3;
+        }
+    }
+    ofs.close();
+}
 int main() {
-    const std::string filepath = "..\\stars.png";
+    const std::string filepath = "..\\simple.png";
     Parser parser;
     ParsedData parsedData;
+    
     if (parser.parse(filepath, parsedData)) {
         std::cout<<"---PNG--info---\n";
         std::cout << "Width: " << parsedData.width << "\n";
         std::cout << "Height: " << parsedData.height << "\n";
-        std::cout << "Bits per channel: " << static_cast<int>(parsedData.bpp) << "\n";
-        std::cout << "Color type: " << static_cast<int>(parsedData.colorType) << "\n";
-        std::cout << "Compression Method: " << static_cast<int>(parsedData.compressionMethod) << "\n";
-        std::cout << "Filter Method: " << static_cast<int>(parsedData.filterMethod) << "\n";
-        std::cout << "Interlace Method: " << static_cast<int>(parsedData.interlaceMethod) << "\n";
-        std::cout << "Compressed IDAT size: " << parsedData.compressedData.size()/(1024.f*1024.f) << " MB\n";
+        std::cout << "Bits per channel: " << int(parsedData.bpp) << "\n";
+        std::cout << "Color type: " << int(parsedData.colorType) << " (" << colorTypes[parsedData.colorType] << ")\n";
+        std::cout << "Compression Method: " << int(parsedData.compressionMethod) << "\n";
+        std::cout << "Filter Method: " << int(parsedData.filterMethod) << "\n";
+        std::cout << "Interlace Method: " << int(parsedData.interlaceMethod) << (parsedData.interlaceMethod?(" (Adam7 Interlace)"):(" (No interlace)")) << "\n";
+        std::cout << std::fixed << "IDAT size: " << parsedData.compressedData.size() << " Bytes\n";
     }else{
         std::cerr << "Failed to load the png " << filepath << "\n";
     }
-    std::ofstream ofs;
-    ofs.open("compressedrawdata");
-
-    if(!ofs.is_open()){
-        std::cout << "Failed to open compressedrawdata\n";
-        return 1;
-    }else{
-        std::cout << "Compressed data size:"<<parsedData.compressedData.size()<<"\n";
-        ofs << parsedData.compressedData.data();
-    }
-    ofs.close();
+    
+    outputToPPM(parsedData.imageData.data(),parsedData.width,parsedData.height);
     return 0;
 }

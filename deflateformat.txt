@@ -1,3 +1,8 @@
+Deflate info
+->has multiple blocks
+->in png it is zlib stream with deflate blocks
+->zlib stream starts with 2 byte header
+->deflate block has 2 parts , huffman trees and encoded data
 Deflate format
 Deflate block:
     byte 1
