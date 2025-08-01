@@ -130,18 +130,18 @@ public:
             bool lastblockbit = (header & 1);// Header & 00000001
             int compressionType = (header & 2) | ((header & 4) >> 2);
             std::cout<<"---Deflate--Block---\n";
-            std::cout << "Header byte : "<< byteAsBin(header) << "\n";
+            //std::cout << "Header byte : "<< byteAsBin(header) << "\n";
             std::cout << "Last block in stream : "<<lastblockbit<<"\n";
             std::cout << "Compression Type : "<< compressionType << " (" << compressionNames[compressionType]<< ")\n";
             reader += 1;
             u16 blockLength = 0;
             if(compressionType == BTYPE_NO_COMPRESSION){
                 blockLength = readBigEndian16(&reader[0]);
-                u16 blockLengthComplement = readBigEndian16(&reader[2]);
+                //u16 blockLengthComplement = readBigEndian16(&reader[2]);
                 std::cout<<"Block length : "<<blockLength<<"\n";
-                std::cout<<"Block Complement length : "<< blockLengthComplement <<"\n";
-                std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
-                std::cout << "Block comp(b):\t"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
+                //std::cout<<"Block Complement length : "<< blockLengthComplement <<"\n";
+                //std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
+                //std::cout << "Block comp(b):\t"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
                 //skip length data
                 reader += 4;
                 //skip data
@@ -188,20 +188,86 @@ public:
         (static_cast<unsigned char>(data[1]) << 8);
     }
 };
-void printCompressedData(const char* data,u32 size){
+void exportData(const u8* data,u32 size){
     std::ofstream ofs;
-    ofs.open("compressedrawdata",std::ios::binary);
+    ofs.open("exportedData",std::ios::binary);
 
     if(!ofs.is_open()){
         std::cout << "Failed to open compressedrawdata\n";
         return;
     }else{
-        ofs.write(data,size);
+        ofs.write((char*)data,size);
     }
     ofs.close();
 }
+u32 paethPredictor(u8 a,u8 b,u8 c){
+    u32 pr = 0;
+    int p = a + b - c;
+    u32 pa = abs(p - a);
+    u32 pb = abs(p - b);
+    u32 pc = abs(p - c);
+    if(pa <= pb && pa <= pc)pr = a;
+    else if(pb <= pc)pr = b;
+    else pr = c;
+
+    return pr;
+}
+const u8* createFilteredBuffer(const char* buffer,u32 width,u32 height){
+    const u8* reader = (u8*)buffer;
+    u8* returnBuffer = (u8*)malloc(sizeof(u8)*(width*height*3));
+    u8* writer = returnBuffer;
+    u8 prevByte = 0;
+    std::vector<u8> prevScanline((width*3),0);
+    //Per scanline
+    for(u32 y=0;y<height;y++){
+        int filterType = u32(reader[0]);
+        std::vector<u8> currentScanline(width*3,0);
+        reader += 1;
+        prevByte = 0;
+        if(y > 80 && y < 104){
+            std::cout << "Selected y:"<<y << " has filter type "<<filterType<<"\n";
+        }
+        //Per Pixel
+        for(u32 x=0;x<width;x++){
+            //Per channel
+            for(u32 i=0;i<3;i++){
+                /*
+                c  |  b
+                --------
+                a  |  x->current pixel
+                */
+                u8 curByte = 0;
+                u8 a = prevByte;
+                u8 b = (y>0?prevScanline[(x*3)+i]:0);
+                u8 c = (x>0?prevScanline[((x-1)*3)+i]:0);
+                if(filterType == 1){
+                    curByte = ((u32(reader[i]) + u32(a)) % 256);
+                }else if(filterType == 2){
+                    curByte = ((u32(reader[i]) + (b)) % 256);
+                }else if(filterType == 4){
+                    curByte = ((u32(reader[i]) + paethPredictor(a,b,c)) % 256);
+                }else if(filterType == 3){
+                    u32 result = floor((u32(a) + u32(b)) / 2.f);
+                    curByte = ((u32(reader[i]) + result) % 256);
+                }
+                else{
+                    curByte = (u32(reader[i]) % 256);
+                }
+                writer[i] = curByte;
+                prevByte = curByte;
+                currentScanline[(x*3)+i] = curByte;
+            }
+            reader+=3;
+            writer+=3;
+        }
+        prevScanline = currentScanline;
+    }
+    return returnBuffer;
+}
+void deleteBuffer(const u8* buffer){
+    free((void*)buffer);
+}
 void outputToPPM(const char* buffer,u32 width,u32 height){
-    const char* reader = buffer;
     
     std::ofstream ofs;
     ofs.open("imageoutput.ppm");
@@ -209,19 +275,29 @@ void outputToPPM(const char* buffer,u32 width,u32 height){
         std::cout << "Failed to open imageoutput.ppm\n";
         return;
     }
-
+    const u8* rgbBuffer = createFilteredBuffer(buffer,width,height);
+    exportData(rgbBuffer,(width*height*3));
+    const u8* reader = rgbBuffer;
     ofs << "P3\n" << width << " " <<  height <<"\n255\n";
-    for(int i=0;i<height;i++){
-        reader += 1; // skip filter byte
-        for(int j=0;j<width;j++){
-            ofs << int(u8(*reader)) << ' ' << int(u8(*(reader + 1))) << ' ' << int(u8(*(reader + 2))) << '\n';
+    //Per Scanline
+    for(u32 y=0;y<height;y++){
+        //Per Pixel
+        for(u32 x=0;x<width;x++){
+            //Per channel
+            for(u32 i=0;i<3;i++){
+                ofs << u32(reader[i]) << (i==2?"":" ");
+            }
             reader += 3;
+            ofs << '\n';
         }
     }
+    
+    deleteBuffer(rgbBuffer);
     ofs.close();
 }
+
 int main() {
-    const std::string filepath = "..\\simple.png";
+    const std::string filepath = "..\\stars.png";
     Parser parser;
     ParsedData parsedData;
     
@@ -234,11 +310,14 @@ int main() {
         std::cout << "Compression Method: " << int(parsedData.compressionMethod) << "\n";
         std::cout << "Filter Method: " << int(parsedData.filterMethod) << "\n";
         std::cout << "Interlace Method: " << int(parsedData.interlaceMethod) << (parsedData.interlaceMethod?(" (Adam7 Interlace)"):(" (No interlace)")) << "\n";
-        std::cout << std::fixed << "IDAT size: " << parsedData.compressedData.size() << " Bytes\n";
+        std::cout << std::fixed << "image data size: " << parsedData.imageData.size()<< " Bytes\n";
     }else{
         std::cerr << "Failed to load the png " << filepath << "\n";
     }
     
     outputToPPM(parsedData.imageData.data(),parsedData.width,parsedData.height);
+    //exportData(parsedData.imageData.data(),parsedData.imageData.size());
+    std::cout<<"Program reached end\n";
+    system("imageoutput.ppm");
     return 0;
 }
