@@ -4,6 +4,7 @@ Deflate info
 ->zlib stream starts with 2 byte header
 ->deflate block has 2 parts , huffman trees and encoded data
 Deflate format
+zlib header 2 bytes
 Deflate block:
     byte 1
         -3 bit header (Big endian)
@@ -16,5 +17,5 @@ Deflate block:
         >skip to byte boundary
     byte 2 - 3 make up LEN = length of block
     byte 4 - 5 make up NLEN = complement of LEN
-
     byte 6... = LEN bytes of literals
+zlib check 4 bytes

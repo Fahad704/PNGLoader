@@ -9,17 +9,41 @@
 typedef unsigned int u32;
 typedef unsigned char u8;
 typedef unsigned short u16;
-
+struct Pixel{
+    u8 R;
+    u8 G;
+    u8 B;
+    u8 getChannel(u8 i){
+        if(i == 0){
+            return R;
+        }else if(i == 1){
+            return G;
+        }else if(i == 2){
+            return B;
+        }else{
+            return NULL;
+        }
+    }
+    void setChannel(u8 i,u8 value){
+        if(i == 0){
+            R = value;
+        }else if(i == 1){
+            G = value;
+        }else if(i == 2){
+            B = value;
+        }
+    }
+};
 struct ParsedData{
-    unsigned int width;
-    unsigned int height;
-    unsigned char bpp;
-    unsigned char colorType;
-    unsigned char compressionMethod;
-    unsigned char filterMethod;
-    unsigned char interlaceMethod;
+    u32 width;
+    u32 height;
+    u8 bpp;
+    u8 colorType;
+    u8 compressionMethod;
+    u8 filterMethod;
+    u8 interlaceMethod;
     std::vector<char> compressedData;
-    std::vector<char> imageData;
+    std::vector<u8> imageData;
 };
 char colorTypes[7][20] = {
     "Grayscale",            // 0
@@ -44,7 +68,6 @@ public:
             std::cerr << "Failed to open file " << filepath << "\n";
             return false;
         }
-
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
 
@@ -81,13 +104,22 @@ public:
                 parsedData.filterMethod = static_cast<unsigned char>(reader[11]);
                 parsedData.interlaceMethod = static_cast<unsigned char>(reader[12]);
 
-                //TODO:(Fahad):Check if it follows the PNG standard
+                bool supported = (
+                    (parsedData.bpp == 8) &&
+                    (parsedData.colorType == 2) &&
+                    (parsedData.filterMethod == 0) &&
+                    (parsedData.interlaceMethod == 0) &&
+                    (parsedData.compressionMethod == 0) 
+                );
+
+                if(!supported){
+                    std::cerr<<"PNG file is not supported or does not follow the PNG standard\n";
+                    return false;
+                }
             }
             else if (chunkType == "IDAT") {
-                //std::cout << length << " Bytes inserted in compressedData\n";
                 parsedData.compressedData.insert(parsedData.compressedData.end(), reader, reader + length);
             }else if (chunkType == "IEND"){
-                //TODO:(Fahad):Decompress and Organize data in a buffer
                 if(!decompressData(parsedData)){
                     std::cout << "Error : unable to decompress data\n";
                     result = false;
@@ -126,41 +158,31 @@ public:
         while((reader + 8) <= end){
             //Block header
             char header = reader[0];
-
             bool lastblockbit = (header & 1);// Header & 00000001
             int compressionType = (header & 2) | ((header & 4) >> 2);
-            std::cout<<"---Deflate--Block---\n";
-            //std::cout << "Header byte : "<< byteAsBin(header) << "\n";
-            std::cout << "Last block in stream : "<<lastblockbit<<"\n";
-            std::cout << "Compression Type : "<< compressionType << " (" << compressionNames[compressionType]<< ")\n";
             reader += 1;
             u16 blockLength = 0;
             if(compressionType == BTYPE_NO_COMPRESSION){
+                //Read LEN(2B)
                 blockLength = readBigEndian16(&reader[0]);
-                //u16 blockLengthComplement = readBigEndian16(&reader[2]);
                 std::cout<<"Block length : "<<blockLength<<"\n";
-                //std::cout<<"Block Complement length : "<< blockLengthComplement <<"\n";
-                //std::cout << "Block length(b):"<<byteAsBin(char(blockLength & 0xFF))<<" "<<byteAsBin(char((blockLength >> 8) & 0xFF))<<"\n";
-                //std::cout << "Block comp(b):\t"<<byteAsBin(char(blockLengthComplement & 0xFF))<<" "<<byteAsBin(char((blockLengthComplement >> 8) & 0xFF))<<"\n";
-                //skip length data
+                //skip LEN(2B) and NLEN(2B)
                 reader += 4;
+                parsedData.imageData.insert(parsedData.imageData.end(),(u8*)reader,(u8*)reader+blockLength);
                 //skip data
-                parsedData.imageData.insert(parsedData.imageData.end(),reader,reader+blockLength);
                 reader += blockLength;
-                continue;
             }else if(compressionType == BTYPE_FIXED_HUFFMAN){
+                std::cout <<"Unhandled deflate block:BTYPE_FIXED_HUFFMAN\n";
                 return true;
             }else if(compressionType == BTYPE_DYNAMIC_HUFFMAN){
+                std::cout <<"Unhandled deflate block:BTYPE_DYNAMIC_HUFFMAN\n";
                 return true;
             }else{
                 std::cout << "ERROR : INVALID COMPRESSION TYPE\n";
                 return false;
             }
-            
+            if(lastblockbit)std::cout << "(Last Block)\n";
         }
-
-        //TODO(Fahad):Decompress deflate stream
-        
         return true;
     }
     
@@ -212,51 +234,44 @@ u32 paethPredictor(u8 a,u8 b,u8 c){
 
     return pr;
 }
-const u8* createFilteredBuffer(const char* buffer,u32 width,u32 height){
-    const u8* reader = (u8*)buffer;
+const u8* createFilteredBuffer(const u8* buffer,u32 width,u32 height){
+    const u8* reader = buffer;
     u8* returnBuffer = (u8*)malloc(sizeof(u8)*(width*height*3));
     u8* writer = returnBuffer;
-    u8 prevByte = 0;
-    std::vector<u8> prevScanline((width*3),0);
+    Pixel prevPixel;
+    std::vector<Pixel> prevScanline(width,{0,0,0});
     //Per scanline
     for(u32 y=0;y<height;y++){
         int filterType = u32(reader[0]);
-        std::vector<u8> currentScanline(width*3,0);
+        std::vector<Pixel> currentScanline(width,{0,0,0});
+        //skip filter byte
         reader += 1;
-        prevByte = 0;
-        if(y > 80 && y < 104){
-            std::cout << "Selected y:"<<y << " has filter type "<<filterType<<"\n";
-        }
+        prevPixel = {0,0,0};
         //Per Pixel
         for(u32 x=0;x<width;x++){
             //Per channel
+            Pixel curPixel = {0,0,0};
             for(u32 i=0;i<3;i++){
-                /*
-                c  |  b
-                --------
-                a  |  x->current pixel
-                */
-                u8 curByte = 0;
-                u8 a = prevByte;
-                u8 b = (y>0?prevScanline[(x*3)+i]:0);
-                u8 c = (x>0?prevScanline[((x-1)*3)+i]:0);
+                u8 value=0;
+                u8 a = (x>0?prevPixel.getChannel(i):0);
+                u8 b = (y>0?prevScanline[x].getChannel(i):0);
+                u8 c = (x>0?prevScanline[x-1].getChannel(i):0);
                 if(filterType == 1){
-                    curByte = ((u32(reader[i]) + u32(a)) % 256);
+                    value = reader[i] + a;
                 }else if(filterType == 2){
-                    curByte = ((u32(reader[i]) + (b)) % 256);
-                }else if(filterType == 4){
-                    curByte = ((u32(reader[i]) + paethPredictor(a,b,c)) % 256);
+                    value = reader[i] + b;
                 }else if(filterType == 3){
-                    u32 result = floor((u32(a) + u32(b)) / 2.f);
-                    curByte = ((u32(reader[i]) + result) % 256);
+                    value = reader[i] + floor((a + b)/ 2.f);
+                }else if(filterType == 4){
+                    value = reader[i] + paethPredictor(a,b,c);
+                }else{
+                    value = reader[i];
                 }
-                else{
-                    curByte = (u32(reader[i]) % 256);
-                }
-                writer[i] = curByte;
-                prevByte = curByte;
-                currentScanline[(x*3)+i] = curByte;
+                curPixel.setChannel(i,value);
+                writer[i] = curPixel.getChannel(i);
             }
+            prevPixel = curPixel;
+            currentScanline[x] = curPixel;
             reader+=3;
             writer+=3;
         }
@@ -267,7 +282,7 @@ const u8* createFilteredBuffer(const char* buffer,u32 width,u32 height){
 void deleteBuffer(const u8* buffer){
     free((void*)buffer);
 }
-void outputToPPM(const char* buffer,u32 width,u32 height){
+void outputToPPM(const u8* buffer,u32 width,u32 height){
     
     std::ofstream ofs;
     ofs.open("imageoutput.ppm");
@@ -314,10 +329,9 @@ int main() {
     }else{
         std::cerr << "Failed to load the png " << filepath << "\n";
     }
-    
     outputToPPM(parsedData.imageData.data(),parsedData.width,parsedData.height);
-    //exportData(parsedData.imageData.data(),parsedData.imageData.size());
     std::cout<<"Program reached end\n";
+    //temperory for quick access
     system("imageoutput.ppm");
     return 0;
 }
