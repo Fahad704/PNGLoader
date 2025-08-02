@@ -1,2 +1,6 @@
+.gitignore
 .vscode/*
 output/*
+bin/*
+build/*
+references/*
