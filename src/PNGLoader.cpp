@@ -21,7 +21,7 @@ struct Pixel{
         }else if(i == 2){
             return B;
         }else{
-            return NULL;
+            return (u8)NULL;
         }
     }
     void setChannel(u8 i,u8 value){
@@ -111,9 +111,8 @@ public:
                     (parsedData.interlaceMethod == 0) &&
                     (parsedData.compressionMethod == 0) 
                 );
-
                 if(!supported){
-                    std::cerr<<"PNG file is not supported or does not follow the PNG standard\n";
+                    std::cerr<<"PNG file is not supported\n";
                     return false;
                 }
             }
@@ -121,7 +120,6 @@ public:
                 parsedData.compressedData.insert(parsedData.compressedData.end(), reader, reader + length);
             }else if (chunkType == "IEND"){
                 if(!decompressData(parsedData)){
-                    std::cout << "Error : unable to decompress data\n";
                     result = false;
                 }
             }else{
@@ -154,7 +152,8 @@ public:
         //skip zlib header
         reader += 2;
         std::cout << "Compressed data size: "<<parsedData.compressedData.size()<<" Bytes \n";
-
+        
+        std::vector<u8> outputstream;
         while((reader + 8) <= end){
             //Block header
             char header = reader[0];
@@ -172,11 +171,22 @@ public:
                 //skip data
                 reader += blockLength;
             }else if(compressionType == BTYPE_FIXED_HUFFMAN){
-                std::cout <<"Unhandled deflate block:BTYPE_FIXED_HUFFMAN\n";
-                return true;
+                std::cout <<"Unhandled Deflate block:BTYPE_FIXED_HUFFMAN\n";
+                // bool endBlock = false;
+                // while(!endBlock){
+                //     if(*reader < 256){
+                //         outputstream.push_back(u8(*reader));
+                //     }else if(*reader == 256){
+                //         std::cout << "-end of block\n";
+                //     }else{
+                //         std::cout << "-compressed data shi that i dont understand\n";
+                //     }
+                //     reader++;
+                // }
+                return false;
             }else if(compressionType == BTYPE_DYNAMIC_HUFFMAN){
                 std::cout <<"Unhandled deflate block:BTYPE_DYNAMIC_HUFFMAN\n";
-                return true;
+                return false;
             }else{
                 std::cout << "ERROR : INVALID COMPRESSION TYPE\n";
                 return false;
@@ -248,9 +258,25 @@ const u8* createFilteredBuffer(const u8* buffer,u32 width,u32 height){
         reader += 1;
         prevPixel = {0,0,0};
         //Per Pixel
+         /*
+               c       b
+            |R|G|B| |R|G|B|
+               a       x
+            |R|G|B| |R|G|B| -> Current Pixel
+
+            filtering types
+
+            defiltering:
+            0 = none    : reconstructed x[channel] = filtered x[channel]
+            1 = sub     : reconstructed x[channel] = filtered x[channel] + filtered a[channel]
+            2 = up      : reconstructed x[channel] = filtered x[channel] + filtered b[channel]
+            3 = average : reconstructed x[channel] = filtered x[channel] + floor((filtered a[channel] + filtered b[channel]) / 2)
+            4 = paeth   : reconstructed x[channel] = filtered x[channel] + paeth(a,b,c)
+        */
         for(u32 x=0;x<width;x++){
             //Per channel
             Pixel curPixel = {0,0,0};
+           
             for(u32 i=0;i<3;i++){
                 u8 value=0;
                 u8 a = (x>0?prevPixel.getChannel(i):0);
@@ -282,7 +308,7 @@ const u8* createFilteredBuffer(const u8* buffer,u32 width,u32 height){
 void deleteBuffer(const u8* buffer){
     free((void*)buffer);
 }
-void outputToPPM(const u8* buffer,u32 width,u32 height){
+void defilterAndOutput(const u8* buffer,u32 width,u32 height){
     
     std::ofstream ofs;
     ofs.open("imageoutput.ppm");
@@ -310,27 +336,44 @@ void outputToPPM(const u8* buffer,u32 width,u32 height){
     ofs.close();
 }
 
-int main() {
-    const std::string filepath = "../res/stars.png";
-    Parser parser;
-    ParsedData parsedData;
-    
-    if (parser.parse(filepath, parsedData)) {
-        std::cout<<"---PNG--info---\n";
-        std::cout << "Width: " << parsedData.width << "\n";
-        std::cout << "Height: " << parsedData.height << "\n";
-        std::cout << "Bits per channel: " << int(parsedData.bpp) << "\n";
-        std::cout << "Color type: " << int(parsedData.colorType) << " (" << colorTypes[parsedData.colorType] << ")\n";
-        std::cout << "Compression Method: " << int(parsedData.compressionMethod) << "\n";
-        std::cout << "Filter Method: " << int(parsedData.filterMethod) << "\n";
-        std::cout << "Interlace Method: " << int(parsedData.interlaceMethod) << (parsedData.interlaceMethod?(" (Adam7 Interlace)"):(" (No interlace)")) << "\n";
-        std::cout << std::fixed << "image data size: " << parsedData.imageData.size()<< " Bytes\n";
+int main(int argc,char* argv[]) {
+    if(argc < 2){
+        std::cout << "Usage: PNGLoader.exe <filename>\n";
+        return 1;
     }else{
-        std::cerr << "Failed to load the png " << filepath << "\n";
+        const std::string filepath = argv[1];
+        Parser parser;
+        ParsedData parsedData;
+        if (parser.parse(filepath, parsedData)) {
+            std::cout<<"---PNG--info---\n";
+            std::cout << "Width: " << parsedData.width << "\n";
+            std::cout << "Height: " << parsedData.height << "\n";
+            std::cout << "Bits per channel: " << int(parsedData.bpp) << "\n";
+            std::cout << "Color type: " << int(parsedData.colorType) << " (" << colorTypes[parsedData.colorType] << ")\n";
+            std::cout << "Compression Method: " << int(parsedData.compressionMethod) << "\n";
+            std::cout << "Filter Method: " << int(parsedData.filterMethod) << "\n";
+            std::cout << "Interlace Method: " << int(parsedData.interlaceMethod) << (parsedData.interlaceMethod?(" (Adam7 Interlace)"):(" (No interlace)")) << "\n";
+            std::cout << std::fixed << "image data size: " << parsedData.imageData.size()<< " Bytes\n";
+            std::cout << "Successfully parsed the image\n";
+        }else{
+            bool bppSupported = (parsedData.bpp == 8);
+            bool colorTypeSupported = (parsedData.colorType == 2);
+            bool interlaceMethodSupported = (parsedData.interlaceMethod == 0);
+
+            if(!bppSupported){
+                std::cout << "The png file has unsupported bits per channel:"<<(int)parsedData.bpp<<"\n";
+            }else if(!colorTypeSupported){
+                std::cout << "The png file has unsupported color type: "<<(int)parsedData.colorType << " (" << colorTypes[(int)parsedData.colorType] << ")\n";
+            }else if(!interlaceMethodSupported){
+                std::cout << "The png file has unsupported interlace method:"<<(int)parsedData.interlaceMethod<<"\n";
+            }
+            std::cout << "Failed to parse the file\n";
+            return 1;
+        }
+        defilterAndOutput(parsedData.imageData.data(),parsedData.width,parsedData.height);
+        std::cout<<"Program reached end\n";
+        //temperory for quick access
+        system("imageoutput.ppm");
+        return 0;
     }
-    outputToPPM(parsedData.imageData.data(),parsedData.width,parsedData.height);
-    std::cout<<"Program reached end\n";
-    //temperory for quick access
-    system("imageoutput.ppm");
-    return 0;
 }
